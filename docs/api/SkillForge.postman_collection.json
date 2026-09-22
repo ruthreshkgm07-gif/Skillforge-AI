@@ -1,0 +1,254 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "SkillForge AI Platform API Collection",
+    "description": "Complete REST API collection for SkillForge AI candidate ecosystem and recruiter matching platform.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register Candidate / Recruiter",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"candidate@skillforge.ai\",\n  \"password\": \"Password@123\",\n  \"fullName\": \"Alex Morgan\",\n  \"role\": \"STUDENT\",\n  \"targetRole\": \"Full Stack Engineer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"candidate@skillforge.ai\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Student Ecosystem",
+      "item": [
+        {
+          "name": "Get Student Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/student/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "student", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Skill Gap Detection",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/student/skill-gap",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "student", "skill-gap"]
+            }
+          }
+        },
+        {
+          "name": "Job Recommendations (pgvector)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/student/job-recommendations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "student", "job-recommendations"]
+            }
+          }
+        },
+        {
+          "name": "AI Career Roadmap Generator",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetRole\": \"Full Stack Engineer\",\n  \"durationMonths\": 6\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/student/roadmap",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "student", "roadmap"]
+            }
+          }
+        },
+        {
+          "name": "AI Mock Interview Start Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetRole\": \"Full Stack Engineer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ai/interview/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ai", "interview", "start"]
+            }
+          }
+        },
+        {
+          "name": "Portfolio & Resume Cross-Analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"githubUrl\": \"https://github.com/octocat\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/student/portfolio-optimizer/analyze",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "student", "portfolio-optimizer", "analyze"]
+            }
+          }
+        },
+        {
+          "name": "Placement & Salary ML Prediction",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/student/placement-prediction",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "student", "placement-prediction"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recruiter Portal",
+      "item": [
+        {
+          "name": "Post New Job (Auto Vector Embedded)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{recruiter_access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Senior Java Spring Boot Engineer\",\n  \"description\": \"Build scalable microservices and pgvector similarity search.\",\n  \"requiredSkills\": [\"Java\", \"Spring Boot\", \"PostgreSQL\", \"Redis\"],\n  \"minExperience\": 3,\n  \"location\": \"Remote\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/recruiter/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "recruiter", "jobs"]
+            }
+          }
+        },
+        {
+          "name": "Candidate Vector Similarity Matching",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{recruiter_access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/recruiter/jobs/{{job_id}}/candidates",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "recruiter", "jobs", "{{job_id}}", "candidates"]
+            }
+          }
+        },
+        {
+          "name": "Recruiter Analytics Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{recruiter_access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/recruiter/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "recruiter", "analytics"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "System & Health",
+      "item": [
+        {
+          "name": "Spring Boot Backend Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            }
+          }
+        },
+        {
+          "name": "FastAPI ML Microservice Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8000/health",
+              "host": ["http://localhost:8000"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080" },
+    { "key": "access_token", "value": "" },
+    { "key": "recruiter_access_token", "value": "" },
+    { "key": "job_id", "value": "" }
+  ]
+}

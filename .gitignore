@@ -1,0 +1,51 @@
+# Environment & Local Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies & Build - Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.cache/
+frontend/*.tsbuildinfo
+
+# Dependencies & Build - Backend
+backend/target/
+backend/.mvn/
+backend/mvnw
+backend/mvnw.cmd
+*.class
+*.jar
+*.war
+
+# Dependencies & Build - ML Service
+ml-service/__pycache__/
+ml-service/*.pyc
+ml-service/*.pyo
+ml-service/.venv/
+ml-service/env/
+ml-service/venv/
+ml-service/.pytest_cache/
+
+# Data & Models
+*.joblib
+*.pkl
+*.h5
+
+# IDEs & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local uploaded files
+backend/uploads/
+
+# Local database files
+backend/data/*.db
+backend/data/*.mv.db
+backend/data/*.lock.db

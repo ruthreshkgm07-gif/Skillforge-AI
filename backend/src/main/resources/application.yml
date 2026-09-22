@@ -1,0 +1,94 @@
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: skillforge-backend
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:file:./data/skillforge_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
+    username: ${POSTGRES_USER:sa}
+    password: ${POSTGRES_PASSWORD:}
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  flyway:
+    enabled: false
+    locations: classpath:db/migration,filesystem:../database/migrations
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:placeholder@gmail.com}
+    password: ${MAIL_PASSWORD:placeholder}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# Security & JWT Configuration
+app:
+  jwt:
+    secret: ${JWT_SECRET:404D635166546A576E5A7234753778214125442A472D4B6150645267556B5870}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+  rate-limit:
+    login-max-attempts: ${LOGIN_MAX_ATTEMPTS:50}
+    login-window-minutes: ${LOGIN_WINDOW_MINUTES:15}
+  interview:
+    max-daily-sessions: ${INTERVIEW_MAX_DAILY_SESSIONS:5}
+
+# Integration Services
+openrouter:
+  api-keys: ${OPENROUTER_API_KEYS:${OPENROUTER_API_KEY:}}
+  api-key-1: ${OPENROUTER_API_KEY_1:}
+  api-key-2: ${OPENROUTER_API_KEY_2:}
+  api-key-3: ${OPENROUTER_API_KEY_3:}
+  model: ${OPENROUTER_MODEL:meta-llama/llama-3.3-70b-instruct:free}
+
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-1.5-flash}
+
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:placeholder}
+  api-key: ${CLOUDINARY_API_KEY:placeholder}
+  api-secret: ${CLOUDINARY_API_SECRET:placeholder}
+
+ml-service:
+  url: ${ML_SERVICE_URL:http://localhost:8000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    mail:
+      enabled: false
+    redis:
+      enabled: false
