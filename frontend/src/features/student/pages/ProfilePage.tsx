@@ -23,6 +23,8 @@ import {
   AlertCircle,
   GraduationCap,
   Calendar,
+  Trophy,
+  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { profileApi, StudentProfileData } from '../services/profileApi';
@@ -183,6 +185,10 @@ export const ProfilePage: React.FC = () => {
                 <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] font-mono">
                   Verified Candidate
                 </Badge>
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px] font-mono flex items-center gap-1">
+                  <Trophy className="h-3 w-3 text-amber-400" />
+                  Level: {profile?.codingLevel || 'Beginner'} ({profile?.codingScore || 0} pts)
+                </Badge>
               </div>
               <p className="text-sm text-slate-300 font-medium">{formData.headline}</p>
               <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 pt-1">
@@ -288,6 +294,8 @@ export const ProfilePage: React.FC = () => {
         assessmentCount={4}
         codingSolvedCount={185}
         placementProb={0.88}
+        codingLevel={profile?.codingLevel || 'Beginner'}
+        codingScore={profile?.codingScore || 0}
       />
 
       {/* READ-ONLY PROFILE OVERVIEW */}
@@ -328,6 +336,45 @@ export const ProfilePage: React.FC = () => {
         </Card>
 
         <Card className="border-border/80 shadow-xs p-6 space-y-6 flex flex-col justify-between">
+          {/* Coding Skill Level Progress Card */}
+          <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-br from-primary/5 via-muted/20 to-accent/5 border">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <Trophy className="h-4 w-4 text-amber-500" /> Coding Skill Level
+              </span>
+              <Badge variant="outline" className="text-[10px] font-mono font-bold border-primary/30 text-primary">
+                {profile?.codingLevel || 'Beginner'}
+              </Badge>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                <span>Score: {profile?.codingScore || 0}/100</span>
+                <span>
+                  {profile?.codingLevel === 'Expert' ? 'Max Tier' :
+                   profile?.codingLevel === 'Advanced' ? 'Next: Expert (90+)' :
+                   profile?.codingLevel === 'Intermediate' ? 'Next: Advanced (70+)' : 'Next: Intermediate (40+)'}
+                </span>
+              </div>
+              <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-500"
+                  style={{
+                    width: `${
+                      profile?.codingLevel === 'Expert' ? 100 :
+                      profile?.codingLevel === 'Advanced' ? Math.min(100, Math.max(10, ((profile?.codingScore || 70) - 70) * 5)) :
+                      profile?.codingLevel === 'Intermediate' ? Math.min(100, Math.max(10, ((profile?.codingScore || 40) - 40) * 3.33)) :
+                      Math.min(100, Math.max(10, (profile?.codingScore || 0) * 2.5))
+                    }%`
+                  }}
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              Tiers: 0-39 Beginner • 40-69 Intermediate • 70-89 Advanced • 90-100 Expert
+            </p>
+          </div>
+
           <div className="space-y-3">
             <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
               <Code className="h-5 w-5 text-primary" /> Verified Skills ({skillsList.length})

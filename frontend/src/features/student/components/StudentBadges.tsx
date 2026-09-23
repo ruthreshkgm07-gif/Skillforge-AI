@@ -21,6 +21,8 @@ interface StudentBadgesProps {
   assessmentCount?: number;
   codingSolvedCount?: number;
   placementProb?: number;
+  codingLevel?: string;
+  codingScore?: number;
 }
 
 export const StudentBadges: React.FC<StudentBadgesProps> = ({
@@ -29,8 +31,27 @@ export const StudentBadges: React.FC<StudentBadgesProps> = ({
   assessmentCount = 4,
   codingSolvedCount = 185,
   placementProb = 0.78,
+  codingLevel = 'Intermediate',
+  codingScore = 65,
 }) => {
   const badges: BadgeItem[] = [
+    {
+      id: 'coding_level_tier',
+      title: `${codingLevel || 'Beginner'} Developer Tier`,
+      description: `Evaluated at ${codingLevel || 'Beginner'} skill level with ${codingScore || 0} composite coding points`,
+      icon: Sparkles,
+      color:
+        codingLevel === 'Expert'
+          ? 'from-purple-500 to-pink-600'
+          : codingLevel === 'Advanced'
+          ? 'from-amber-500 to-orange-600'
+          : codingLevel === 'Intermediate'
+          ? 'from-blue-500 to-cyan-600'
+          : 'from-emerald-500 to-teal-600',
+      earned: true,
+      earnedDate: 'Active Tier',
+      progressText: `${codingScore || 0}/100 Pts`,
+    },
     {
       id: 'resume_uploaded',
       title: 'Resume Uploaded',
@@ -64,12 +85,12 @@ export const StudentBadges: React.FC<StudentBadgesProps> = ({
     {
       id: 'dsa_master',
       title: 'DSA Problem Solver',
-      description: 'Solved over 100 algorithm problems on LeetCode/Coding tracker',
+      description: 'Solved algorithm problems with clean Big-O runtime and space',
       icon: Code,
       color: 'from-amber-500 to-orange-600',
-      earned: codingSolvedCount >= 100,
+      earned: codingSolvedCount >= 1,
       earnedDate: 'Unlocked',
-      progressText: `${codingSolvedCount}/100 Solved`,
+      progressText: `${codingSolvedCount} Solved`,
     },
     {
       id: 'placement_ready',

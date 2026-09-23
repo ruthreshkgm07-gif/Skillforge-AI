@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
@@ -32,6 +32,11 @@ import {
   Copy,
   ChevronRight,
   List,
+  Lightbulb,
+  Trophy,
+  ShieldAlert,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -39,6 +44,8 @@ import {
   CodingProblemSummary,
   CodingProblemDetail,
   TestCaseResult,
+  SubmissionFeedback,
+  UserSkillStats,
 } from '../services/codingPracticeApi';
 
 const CODING_TOPICS = [
@@ -61,6 +68,22 @@ export const CodingPlatformPage: React.FC = () => {
   // Active Topic & Problem State
   const [selectedTopic, setSelectedTopic] = useState<string>('Queues');
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
+
+  // Execution Isolation: Run ID tracking & AbortController to prevent race conditions and cross-talk
+  const latestRunIdRef = useRef<string | null>(null);
+  const runAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Clear stale output & abort in-flight execution when switching problem or topic
+  useEffect(() => {
+    if (runAbortControllerRef.current) {
+      runAbortControllerRef.current.abort();
+    }
+    latestRunIdRef.current = null;
+    setConsoleOutput(null);
+    setExecutionResult(null);
+    setActiveTestCaseTab(1);
+    setIsExecuting(false);
+  }, [selectedProblemId, selectedTopic]);
 
   // Editor State
   const [selectedLanguage, setSelectedLanguage] = useState<string>('python');
@@ -293,18 +316,35 @@ export const CodingPlatformPage: React.FC = () => {
     return { timeComplexity, spaceComplexity, complexityExplanation: explanation };
   };
 
-  // Run Code Action
+  // Run Code Action with Full Isolation & AbortController
   const handleRunCode = async () => {
+    // 1. Cancel previous in-flight request if any
+    if (runAbortControllerRef.current) {
+      runAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    runAbortControllerRef.current = controller;
+
+    // 2. Generate unique runId for client tracking
+    const currentRunId = crypto.randomUUID();
+    latestRunIdRef.current = currentRunId;
+
     try {
       setIsExecuting(true);
-      setConsoleOutput('Executing code against test case inputs in sandbox...');
+      setConsoleOutput('Executing in isolated sandbox per run...');
       setExecutionResult(null);
 
       const res = await codingPracticeApi.runCode({
+        runId: currentRunId,
         problemId: selectedProblemId || undefined,
         language: selectedLanguage,
         code: editorCode,
-      });
+      }, controller.signal);
+
+      // 3. Ignore stale response if user triggered a newer run
+      if (res.runId && res.runId !== latestRunIdRef.current) {
+        return;
+      }
 
       const caseResults = res.testCaseResults && res.testCaseResults.length > 0
         ? res.testCaseResults
@@ -319,6 +359,14 @@ export const CodingPlatformPage: React.FC = () => {
       setConsoleOutput(res.output || (res.success ? 'Code executed cleanly against all test cases.' : 'Execution error occurred.'));
       setActiveTestCaseTab(1);
     } catch (err: any) {
+      if (err.name === 'AbortError' || err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
+        // Aborted request, silently return
+        return;
+      }
+      if (latestRunIdRef.current !== currentRunId) {
+        return;
+      }
+
       const codeLines = editorCode.split('\n');
       let errorLine = 1;
       let errorType = 'RuntimeError';
@@ -415,7 +463,11 @@ export const CodingPlatformPage: React.FC = () => {
     spaceComplexity?: string;
     executionTimeMs?: number;
     problemTitle?: string;
+    feedback?: SubmissionFeedback;
+    userSkillStats?: UserSkillStats;
   } | null>(null);
+  const [showHint, setShowHint] = useState<boolean>(false);
+  const [activeFeedbackTab, setActiveFeedbackTab] = useState<'OVERVIEW' | 'TEST_CASES' | 'CODE_QUALITY' | 'COMPLEXITY'>('OVERVIEW');
 
   // Trigger OpenRouter AI Explain Error Action
   const handleExplainError = async () => {
@@ -449,9 +501,15 @@ export const CodingPlatformPage: React.FC = () => {
   // Submit Solution Action
   const handleSubmitSolution = async () => {
     if (!selectedProblemId) return;
+    const submitRunId = crypto.randomUUID();
     try {
       setIsExecuting(true);
+      setShowHint(false);
+      setActiveFeedbackTab('OVERVIEW');
+      setConsoleOutput('Submitting and evaluating code against problem test suite in sandbox...');
+
       const res = await codingPracticeApi.submitCode({
+        runId: submitRunId,
         problemId: selectedProblemId,
         language: selectedLanguage,
         code: editorCode,
@@ -463,10 +521,12 @@ export const CodingPlatformPage: React.FC = () => {
         score: res.score,
         testCasesPassed: res.testCasesPassed,
         totalTestCases: res.totalTestCases,
-        timeComplexity: comp.timeComplexity,
-        spaceComplexity: comp.spaceComplexity,
-        executionTimeMs: 16,
+        timeComplexity: res.feedback?.complexity?.time || comp.timeComplexity,
+        spaceComplexity: res.feedback?.complexity?.space || comp.spaceComplexity,
+        executionTimeMs: res.feedback?.complexity?.executionTimeMs || 16,
         problemTitle: problemDetail?.title || 'Coding Practice Problem',
+        feedback: res.feedback,
+        userSkillStats: res.userSkillStats,
       });
       setShowSubmissionModal(true);
 
@@ -1324,69 +1384,451 @@ export const CodingPlatformPage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* 2. SUBMISSION RESULTS SUMMARY MODAL */}
+      {/* 2. SUBMISSION RESULTS & SKILL LEVEL FEEDBACK REPORT MODAL */}
       <AnimatePresence>
         {showSubmissionModal && submissionResult && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 overflow-y-auto"
           >
             <motion.div
-              initial={{ scale: 0.9, y: 20 }}
+              initial={{ scale: 0.92, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-card border-2 border-primary/40 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 text-center"
+              exit={{ scale: 0.92, y: 20 }}
+              className="bg-card border-2 border-primary/40 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto text-left"
             >
-              <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary to-purple-600 text-white flex items-center justify-center mx-auto shadow-md">
-                <CheckCircle2 className="h-8 w-8" />
+              {/* Header with Status and Level Badge */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`h-12 w-12 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-md ${
+                      submissionResult.status === 'PASSED'
+                        ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                        : 'bg-gradient-to-br from-amber-500 to-rose-600'
+                    }`}
+                  >
+                    {submissionResult.status === 'PASSED' ? (
+                      <CheckCircle2 className="h-6 w-6" />
+                    ) : (
+                      <AlertTriangle className="h-6 w-6" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge
+                        variant={submissionResult.status === 'PASSED' ? 'success' : 'destructive'}
+                        className="px-2.5 py-0.5 text-xs font-bold"
+                      >
+                        {submissionResult.status === 'PASSED' ? 'Solution Accepted 🎉' : 'Needs Optimization ⚠️'}
+                      </Badge>
+                      {submissionResult.userSkillStats?.level && (
+                        <Badge
+                          variant="outline"
+                          className="px-2.5 py-0.5 text-xs font-mono font-bold bg-primary/10 text-primary border-primary/30 flex items-center gap-1"
+                        >
+                          <Trophy className="h-3 w-3 text-amber-500" />
+                          {submissionResult.userSkillStats.level} Tier
+                        </Badge>
+                      )}
+                    </div>
+                    <h3 className="text-xl font-extrabold text-foreground mt-1">
+                      {submissionResult.problemTitle}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="text-right sm:text-right">
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Submission Score</span>
+                  <span className="text-2xl font-black text-primary">{submissionResult.score} / 100</span>
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Badge variant={submissionResult.status === 'PASSED' ? 'success' : 'secondary'} className="px-3 py-1 font-bold text-xs">
-                  {submissionResult.status === 'PASSED' ? 'Solution Accepted 🎉' : 'Evaluation Completed'}
-                </Badge>
-                <h3 className="text-2xl font-extrabold text-foreground">
-                  {submissionResult.problemTitle}
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Your code was verified against all test cases with complexity metrics.
-                </p>
+              {/* User Skill Level & Range Banner */}
+              {submissionResult.userSkillStats && (
+                <div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-muted/30 to-accent/5 p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="h-4 w-4 text-amber-500" />
+                      <span className="text-xs font-bold text-foreground">
+                        Your Coding Skill Level:{' '}
+                        <span className="text-primary font-black uppercase tracking-wider">
+                          {submissionResult.userSkillStats.level}
+                        </span>{' '}
+                        ({submissionResult.userSkillStats.overallScore} pts)
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      Next Tier: <span className="font-bold text-foreground">{submissionResult.userSkillStats.nextLevel}</span>
+                    </span>
+                  </div>
+
+                  {/* Level Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                      <span>{submissionResult.userSkillStats.scoreMinForCurrentLevel} pts</span>
+                      <span className="font-bold text-primary">{submissionResult.userSkillStats.progressToNextLevel}% to next tier</span>
+                      <span>{submissionResult.userSkillStats.scoreMaxForCurrentLevel} pts</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(5, submissionResult.userSkillStats.progressToNextLevel)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Topic Mastery & Problem Difficulty Solved */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-muted-foreground font-bold">Solved:</span>
+                      <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 bg-emerald-500/10">
+                        {submissionResult.userSkillStats.easySolved} Easy
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-500 bg-amber-500/10">
+                        {submissionResult.userSkillStats.mediumSolved} Medium
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] border-rose-500/30 text-rose-500 bg-rose-500/10">
+                        {submissionResult.userSkillStats.hardSolved} Hard
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap sm:justify-end">
+                      <span className="text-muted-foreground font-bold">Top Topic:</span>
+                      <Badge variant="secondary" className="text-[10px] font-medium">
+                        {submissionResult.userSkillStats.strongestTopics?.[0] || 'Algorithms'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Metrics Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-2xl bg-muted/40 border text-center text-xs">
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Tests Passed</span>
+                  <span className="text-base font-extrabold text-foreground">
+                    {submissionResult.testCasesPassed} / {submissionResult.totalTestCases}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Time Complexity</span>
+                  <span className="text-base font-extrabold text-amber-500 font-mono">
+                    {submissionResult.timeComplexity || 'O(N)'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Space Complexity</span>
+                  <span className="text-base font-extrabold text-emerald-500 font-mono">
+                    {submissionResult.spaceComplexity || 'O(1)'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Runtime</span>
+                  <span className="text-base font-extrabold text-primary font-mono">
+                    {submissionResult.executionTimeMs || 16} ms
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 p-3.5 rounded-2xl bg-muted/50 border text-center text-xs">
-                <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Score</span>
-                  <span className="text-base font-extrabold text-primary">{submissionResult.score} / 100</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Test Cases</span>
-                  <span className="text-base font-extrabold text-foreground">{submissionResult.testCasesPassed}/{submissionResult.totalTestCases}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Complexity</span>
-                  <span className="text-base font-extrabold text-amber-500 font-mono">{submissionResult.timeComplexity || 'O(N)'}</span>
-                </div>
+              {/* Feedback Navigation Tabs */}
+              <div className="flex border-b text-xs font-bold gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveFeedbackTab('OVERVIEW')}
+                  className={`pb-2 px-2.5 transition-colors border-b-2 shrink-0 ${
+                    activeFeedbackTab === 'OVERVIEW'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Overview & Advice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveFeedbackTab('TEST_CASES')}
+                  className={`pb-2 px-2.5 transition-colors border-b-2 shrink-0 flex items-center gap-1.5 ${
+                    activeFeedbackTab === 'TEST_CASES'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Test Results
+                  {submissionResult.feedback?.failedTestCases && submissionResult.feedback.failedTestCases.length > 0 && (
+                    <Badge variant="destructive" className="h-4 px-1.5 text-[9px]">
+                      {submissionResult.feedback.failedTestCases.length} Failed
+                    </Badge>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveFeedbackTab('CODE_QUALITY')}
+                  className={`pb-2 px-2.5 transition-colors border-b-2 shrink-0 ${
+                    activeFeedbackTab === 'CODE_QUALITY'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Code Quality (5 Metrics)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveFeedbackTab('COMPLEXITY')}
+                  className={`pb-2 px-2.5 transition-colors border-b-2 shrink-0 ${
+                    activeFeedbackTab === 'COMPLEXITY'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Complexity & Memory
+                </button>
               </div>
 
-              <div className="flex flex-col gap-2 pt-2">
+              {/* Tab 1: Overview & Advice */}
+              {activeFeedbackTab === 'OVERVIEW' && (
+                <div className="space-y-4">
+                  {/* Encouraging Beginner-Friendly Suggestion */}
+                  <div className="p-4 rounded-2xl bg-primary/10 border border-primary/20 space-y-1.5">
+                    <div className="flex items-center gap-2 text-primary font-bold text-xs">
+                      <Lightbulb className="h-4 w-4" />
+                      <span>Coach Feedback & Encouragement</span>
+                    </div>
+                    <p className="text-xs text-foreground leading-relaxed">
+                      {submissionResult.feedback?.suggestion ||
+                        'Great effort! Breaking the problem down and checking edge-case boundaries will help you lock in a perfect score.'}
+                    </p>
+                  </div>
+
+                  {/* Strengths & Improvements */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3.5 rounded-2xl border bg-muted/20 space-y-2">
+                      <span className="text-[11px] font-bold text-emerald-500 flex items-center gap-1.5">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Key Strengths
+                      </span>
+                      <ul className="space-y-1.5 text-xs text-muted-foreground">
+                        {(submissionResult.feedback?.strengths || [
+                          'Clear algorithmic logic',
+                          'Good problem breakdown',
+                        ]).map((s, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5">
+                            <span className="text-emerald-500 font-bold">•</span>
+                            <span>{s}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl border bg-muted/20 space-y-2">
+                      <span className="text-[11px] font-bold text-amber-500 flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Areas for Improvement
+                      </span>
+                      <ul className="space-y-1.5 text-xs text-muted-foreground">
+                        {(submissionResult.feedback?.improvements || [
+                          'Add defensive checks for boundary constraints',
+                          'Use descriptive variable names',
+                        ]).map((imp, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5">
+                            <span className="text-amber-500 font-bold">•</span>
+                            <span>{imp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Cleaner / Optimized Approach Hint (Toggleable so it's not spoiled immediately) */}
+                  <div className="p-4 rounded-2xl border border-dashed border-primary/30 bg-muted/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        <span className="text-xs font-bold text-foreground">
+                          Optimized / Cleaner Approach Hint
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowHint(!showHint)}
+                        className="h-7 text-xs text-primary gap-1"
+                      >
+                        {showHint ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        {showHint ? 'Hide Hint' : 'Reveal Hint'}
+                      </Button>
+                    </div>
+
+                    {showHint ? (
+                      <motion.p
+                        initial={{ opacity: 0, y: -5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-xs text-muted-foreground italic border-t pt-2"
+                      >
+                        {submissionResult.feedback?.hint ||
+                          'Hint: Look for data structures like Hash Tables or two pointers that can turn nested loops into a single linear traversal.'}
+                      </motion.p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        Click 'Reveal Hint' to see algorithmic tips for a cleaner, faster approach without spoiling the full solution.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 2: Test Results & Failed Cases */}
+              {activeFeedbackTab === 'TEST_CASES' && (
+                <div className="space-y-3">
+                  {submissionResult.feedback?.failedTestCases && submissionResult.feedback.failedTestCases.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs font-bold flex items-center gap-2">
+                        <ShieldAlert className="h-4 w-4 shrink-0" />
+                        <span>
+                          {submissionResult.feedback.failedTestCases.length} of {submissionResult.totalTestCases} test case(s) failed or encountered mismatch:
+                        </span>
+                      </div>
+
+                      {submissionResult.feedback.failedTestCases.map((f, idx) => (
+                        <div key={idx} className="p-3.5 rounded-2xl border bg-muted/20 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-foreground">Test Case #{f.testCaseNumber}</span>
+                            <Badge variant="destructive" className="text-[10px]">FAILED</Badge>
+                          </div>
+                          <div className="space-y-1 font-mono text-[11px]">
+                            <div className="p-2 rounded-lg bg-background border">
+                              <span className="text-muted-foreground block text-[10px]">Input:</span>
+                              <span className="text-foreground">{f.input}</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                                <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Expected Output:</span>
+                                <span>{f.expectedOutput}</span>
+                              </div>
+                              <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+                                <span className="block text-[10px] text-destructive font-bold">Actual Output:</span>
+                                <span>{f.actualOutput || 'No output / Error'}</span>
+                              </div>
+                            </div>
+                            {f.reason && (
+                              <p className="text-[11px] text-muted-foreground pt-1">
+                                <span className="font-bold">Reason:</span> {f.reason}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
+                      <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                        All {submissionResult.totalTestCases} Test Cases Passed Smoothly!
+                      </h4>
+                      <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                        Your solution produced the exact expected output across all sample inputs, edge cases, and scale checks.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 3: Code Quality Metrics */}
+              {activeFeedbackTab === 'CODE_QUALITY' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    Automated multidimensional evaluation of readability, idiomatic naming, algorithmic structure, correctness, and defensive programming.
+                  </p>
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Correctness & Accuracy', val: submissionResult.feedback?.codeQuality?.correctness ?? 90, desc: 'Accuracy against test inputs and absence of runtime exceptions.' },
+                      { label: 'Readability & Indentation', val: submissionResult.feedback?.codeQuality?.readability ?? 85, desc: 'Clean formatting, consistent indentation, and helpful comments.' },
+                      { label: 'Variable & Function Naming', val: submissionResult.feedback?.codeQuality?.naming ?? 80, desc: 'Descriptive identifiers adhering to naming conventions.' },
+                      { label: 'Algorithmic Structure', val: submissionResult.feedback?.codeQuality?.structure ?? 85, desc: 'Modular function separation, minimal nesting, and cohesion.' },
+                      { label: 'Edge-Case Handling', val: submissionResult.feedback?.codeQuality?.edgeCaseHandling ?? 75, desc: 'Guard clauses for empty collections, boundary conditions, and null safety.' },
+                    ].map((metric, idx) => (
+                      <div key={idx} className="p-3 rounded-xl border bg-muted/20 space-y-1.5">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className="text-foreground">{metric.label}</span>
+                          <span className="text-primary font-mono">{metric.val} / 100</span>
+                        </div>
+                        <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              metric.val >= 85 ? 'bg-emerald-500' : metric.val >= 70 ? 'bg-primary' : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${metric.val}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{metric.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 4: Complexity & Performance */}
+              {activeFeedbackTab === 'COMPLEXITY' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3.5 rounded-2xl border bg-muted/20 space-y-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Time Complexity</span>
+                      <div className="text-xl font-black text-amber-500 font-mono">
+                        {submissionResult.timeComplexity || 'O(N)'}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {submissionResult.feedback?.complexity?.explanation ||
+                          'Algorithmic execution speed proportional to input size.'}
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl border bg-muted/20 space-y-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Space Complexity</span>
+                      <div className="text-xl font-black text-emerald-500 font-mono">
+                        {submissionResult.spaceComplexity || 'O(1)'}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Auxiliary memory allocated during execution.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-muted/40 border text-center text-xs">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold block">Execution Time</span>
+                      <span className="text-sm font-bold font-mono text-foreground">
+                        {submissionResult.executionTimeMs || 16} ms
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold block">Memory Footprint</span>
+                      <span className="text-sm font-bold font-mono text-foreground">
+                        {submissionResult.feedback?.complexity?.memoryUsedKb || 1420} KB
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
+                <Button
+                  onClick={() => setShowSubmissionModal(false)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto text-xs"
+                >
+                  Close & Continue Practicing
+                </Button>
+
                 <Button
                   onClick={() => {
                     setShowSubmissionModal(false);
                     navigate('/student/mcq');
                   }}
                   variant="gradient"
-                  className="w-full font-bold gap-2 py-3 shadow-md"
+                  className="w-full sm:w-auto font-bold gap-2 text-xs shadow-md"
                 >
                   <Sparkles className="h-4 w-4" /> Take {completedTopicName} IndiaBix MCQ Quiz
-                </Button>
-                <Button
-                  onClick={() => setShowSubmissionModal(false)}
-                  variant="ghost"
-                  className="w-full text-xs text-muted-foreground"
-                >
-                  Continue Next Challenge
                 </Button>
               </div>
             </motion.div>

@@ -12,6 +12,8 @@ export interface StudentProfileData {
   linkedinUrl?: string;
   avatarUrl?: string;
   skills?: string[];
+  codingScore?: number;
+  codingLevel?: string;
   createdAt?: string;
 }
 

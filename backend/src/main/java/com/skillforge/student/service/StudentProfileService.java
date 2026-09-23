@@ -53,6 +53,8 @@ public class StudentProfileService {
                 .linkedinUrl(profile.getLinkedinUrl())
                 .avatarUrl(profile.getAvatarUrl())
                 .skills(skills)
+                .codingScore(profile.getCodingScore() != null ? profile.getCodingScore() : 0)
+                .codingLevel(profile.getCodingLevel() != null ? profile.getCodingLevel() : "Beginner")
                 .createdAt(profile.getCreatedAt())
                 .build();
     }

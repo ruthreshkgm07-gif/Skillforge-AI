@@ -65,6 +65,14 @@ public class StudentProfile {
     private java.time.LocalDate lastActiveDate;
 
     @Builder.Default
+    @Column(name = "coding_score")
+    private Integer codingScore = 0;
+
+    @Builder.Default
+    @Column(name = "coding_level", length = 50)
+    private String codingLevel = "Beginner";
+
+    @Builder.Default
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<StudentSkill> studentSkills = new HashSet<>();
 

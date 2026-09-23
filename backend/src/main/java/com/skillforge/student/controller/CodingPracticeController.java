@@ -58,4 +58,13 @@ public class CodingPracticeController {
         CodingPracticeDto.SubmitCodeResponse response = codingPracticeService.submitCode(userDetails.getId(), request);
         return ResponseEntity.ok(ApiResponse.success(response, "Coding challenge submission evaluated successfully"));
     }
+
+    @GetMapping("/skill-level")
+    @PreAuthorize("hasRole('STUDENT') or hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<CodingPracticeDto.UserSkillStatsDto>> getSkillLevel(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        CodingPracticeDto.UserSkillStatsDto response = codingPracticeService.getUserSkillStats(userDetails.getId());
+        return ResponseEntity.ok(ApiResponse.success(response, "User coding skill level fetched successfully"));
+    }
 }

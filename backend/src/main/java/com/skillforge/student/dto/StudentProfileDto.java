@@ -33,5 +33,7 @@ public class StudentProfileDto {
     private String linkedinUrl;
     private String avatarUrl;
     private List<String> skills;
+    private Integer codingScore;
+    private String codingLevel;
     private ZonedDateTime createdAt;
 }
