@@ -1,0 +1,19 @@
+[33mcommit 2ed65c590983368ee3b268e05dc2ea837df1627b[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Ruthresh E <ruthreshkgm07@gmail.com>
+Date:   Thu Sep 24 21:59:28 2026 +0530
+
+    feat: add student profile management and coding practice features
+
+[1mdiff --git a/backend/src/main/resources/application.yml b/backend/src/main/resources/application.yml[m
+[1mindex c6b495b..e77a48e 100644[m
+[1m--- a/backend/src/main/resources/application.yml[m
+[1m+++ b/backend/src/main/resources/application.yml[m
+[36m@@ -69,7 +69,7 @@[m [mopenai:[m
+ [m
+ gemini:[m
+   api-key: ${GEMINI_API_KEY:}[m
+[31m-  model: ${GEMINI_MODEL:gemini-1.5-flash}[m
+[32m+[m[32m  model: ${GEMINI_MODEL:gemini-3.6-flash}[m
+ [m
+ cloudinary:[m
+   cloud-name: ${CLOUDINARY_CLOUD_NAME:placeholder}[m
