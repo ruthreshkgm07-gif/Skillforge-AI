@@ -40,6 +40,8 @@ export const AIAssistantPage: React.FC = () => {
   const [inputMessage, setInputMessage] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [localMessages, setLocalMessages] = useState<ChatMessageItem[]>([]);
+
   // 1. Fetch Sessions List
   const { data: sessionsData, isLoading: isLoadingSessions } = useQuery<any>({
     queryKey: ['ai-assistant-sessions'],
@@ -55,6 +57,11 @@ export const AIAssistantPage: React.FC = () => {
     }
   }, [sessions, activeSessionId]);
 
+  // Clear local messages when switching sessions
+  useEffect(() => {
+    setLocalMessages([]);
+  }, [activeSessionId]);
+
   // 2. Fetch Messages for Active Session
   const { data: messagesData, isLoading: isLoadingMessages } = useQuery<any>({
     queryKey: ['ai-assistant-messages', activeSessionId],
@@ -62,12 +69,20 @@ export const AIAssistantPage: React.FC = () => {
     enabled: Boolean(activeSessionId),
   });
 
-  const messages: ChatMessageItem[] = messagesData?.data || [];
+  const serverMessages: ChatMessageItem[] = messagesData?.data || [];
+  
+  // Merge server messages and local messages, deduplicating by ID
+  const allMessages: ChatMessageItem[] = React.useMemo(() => {
+    const map = new Map<string, ChatMessageItem>();
+    serverMessages.forEach((m) => map.set(m.id, m));
+    localMessages.forEach((m) => map.set(m.id, m));
+    return Array.from(map.values());
+  }, [serverMessages, localMessages]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [allMessages, localMessages]);
 
   // 3. Send Message Mutation
   const sendMessageMutation = useMutation({
@@ -79,6 +94,19 @@ export const AIAssistantPage: React.FC = () => {
       if (targetSessionId && targetSessionId !== activeSessionId) {
         setActiveSessionId(targetSessionId);
       }
+
+      if (responseData?.reply) {
+        setLocalMessages((prev) => [
+          ...prev,
+          {
+            id: 'asst-' + Date.now(),
+            sender: 'assistant',
+            content: responseData.reply,
+            createdAt: responseData.timestamp || new Date().toISOString(),
+          },
+        ]);
+      }
+
       if (targetSessionId) {
         queryClient.invalidateQueries({ queryKey: ['ai-assistant-messages', targetSessionId] });
       }
@@ -86,58 +114,108 @@ export const AIAssistantPage: React.FC = () => {
       setInputMessage('');
     },
     onError: (error: any) => {
-      const msg = error?.response?.data?.message || error?.message || 'Failed to communicate with AI Assistant.';
-      console.error('Chat error:', msg);
+      const msg = error?.response?.data?.message || error?.message || 'Failed to communicate with AI Assistant. Please try again.';
+      console.error('SkillForge AI Assistant error:', error);
+      setLocalMessages((prev) => [
+        ...prev,
+        {
+          id: 'err-' + Date.now(),
+          sender: 'assistant',
+          content: `⚠️ **AI Service Notice**: ${msg}\n\nPlease try asking again or rephrase your question.`,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
     },
   });
 
   // 4. Create New Session Handler
   const handleNewChat = () => {
     setActiveSessionId(null);
+    setLocalMessages([]);
     setInputMessage('');
   };
 
   // 5. Submit Message Form
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || sendMessageMutation.isPending) return;
+    const query = inputMessage.trim();
+    if (!query || sendMessageMutation.isPending) return;
+
+    // Optimistically show user message immediately
+    const userMsg: ChatMessageItem = {
+      id: 'user-' + Date.now(),
+      sender: 'user',
+      content: query,
+      createdAt: new Date().toISOString(),
+    };
+    setLocalMessages((prev) => [...prev, userMsg]);
+    setInputMessage('');
 
     sendMessageMutation.mutate({
-      message: inputMessage.trim(),
+      message: query,
       sessionId: activeSessionId,
     });
   };
 
-  // Basic markdown text renderer helper (bullet points, bold text, code blocks)
+  // Enhanced markdown text renderer (multi-line code blocks, bullet points, headers, bold text)
   const renderMarkdown = (text: string) => {
     const lines = text.split('\n');
-    return lines.map((line, idx) => {
+    const elements: React.ReactNode[] = [];
+    let inCodeBlock = false;
+    let codeBlockLines: string[] = [];
+
+    lines.forEach((line, idx) => {
+      if (line.trim().startsWith('```')) {
+        if (inCodeBlock) {
+          elements.push(
+            <pre key={`code-${idx}`} className="my-2 p-3 rounded-lg bg-zinc-950 font-mono text-xs text-emerald-400 overflow-x-auto border border-border/50">
+              <code>{codeBlockLines.join('\n')}</code>
+            </pre>
+          );
+          codeBlockLines = [];
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+          codeBlockLines = [];
+        }
+        return;
+      }
+
+      if (inCodeBlock) {
+        codeBlockLines.push(line);
+        return;
+      }
+
       if (line.startsWith('### ')) {
-        return <h3 key={idx} className="text-base font-bold my-2 text-foreground">{line.replace('### ', '')}</h3>;
-      }
-      if (line.startsWith('## ')) {
-        return <h2 key={idx} className="text-lg font-extrabold my-2 text-foreground">{line.replace('## ', '')}</h2>;
-      }
-      if (line.startsWith('- ') || line.startsWith('* ')) {
-        return (
+        elements.push(<h3 key={idx} className="text-sm font-bold my-2 text-foreground">{line.replace('### ', '')}</h3>);
+      } else if (line.startsWith('## ')) {
+        elements.push(<h2 key={idx} className="text-base font-extrabold my-2 text-foreground">{line.replace('## ', '')}</h2>);
+      } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+        elements.push(
           <li key={idx} className="ml-4 list-disc text-xs leading-relaxed my-0.5">
-            {formatBoldText(line.substring(2))}
+            {formatBoldText(line.trim().substring(2))}
           </li>
         );
-      }
-      if (line.startsWith('```')) {
-        return (
-          <div key={idx} className="my-2 p-3 rounded-lg bg-black/80 font-mono text-xs text-green-400 overflow-x-auto border border-border/50">
-            {line.replace(/```[a-z]*/g, '')}
-          </div>
+      } else if (line.trim() === '') {
+        elements.push(<div key={idx} className="h-1" />);
+      } else {
+        elements.push(
+          <p key={idx} className="text-xs leading-relaxed mb-1 text-foreground/90">
+            {formatBoldText(line)}
+          </p>
         );
       }
-      return (
-        <p key={idx} className="text-xs leading-relaxed mb-1 text-foreground/90">
-          {formatBoldText(line)}
-        </p>
-      );
     });
+
+    if (inCodeBlock && codeBlockLines.length > 0) {
+      elements.push(
+        <pre key="code-unclosed" className="my-2 p-3 rounded-lg bg-zinc-950 font-mono text-xs text-emerald-400 overflow-x-auto border border-border/50">
+          <code>{codeBlockLines.join('\n')}</code>
+        </pre>
+      );
+    }
+
+    return elements;
   };
 
   const formatBoldText = (str: string) => {
@@ -210,7 +288,7 @@ export const AIAssistantPage: React.FC = () => {
             </div>
             <div>
               <h2 className="text-sm font-bold text-foreground">SkillForge AI Personal Assistant</h2>
-              <p className="text-[10px] text-muted-foreground">Powered by Google Gemini 1.5 Pro • Context Aware</p>
+              <p className="text-[10px] text-muted-foreground">Powered by Google Gemini • Context Aware</p>
             </div>
           </div>
 
@@ -221,12 +299,12 @@ export const AIAssistantPage: React.FC = () => {
 
         {/* Message Stream */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {isLoadingMessages ? (
+          {isLoadingMessages && allMessages.length === 0 ? (
             <div className="space-y-4">
               <Skeleton className="h-16 w-3/4 rounded-2xl" />
               <Skeleton className="h-20 w-2/3 rounded-2xl ml-auto" />
             </div>
-          ) : messages.length === 0 ? (
+          ) : allMessages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center space-y-4 text-center text-muted-foreground">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <Sparkles className="h-8 w-8" />
@@ -256,7 +334,7 @@ export const AIAssistantPage: React.FC = () => {
               </div>
             </div>
           ) : (
-            messages.map((msg) => {
+            allMessages.map((msg) => {
               const isUser = msg.sender === 'user';
               return (
                 <motion.div

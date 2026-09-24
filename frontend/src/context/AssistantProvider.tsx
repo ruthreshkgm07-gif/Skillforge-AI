@@ -44,23 +44,23 @@ export const AssistantProvider: React.FC<{ children: ReactNode }> = ({ children 
     },
     onSuccess: (responseData: any) => {
       const payload = responseData?.data || responseData;
-      if (payload && payload.reply) {
-        if (!sessionId && payload.sessionId) {
-          setSessionId(payload.sessionId);
-        }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: String(Date.now()),
-            sender: 'assistant',
-            content: payload.reply,
-            timestamp: payload.timestamp || new Date().toISOString(),
-          },
-        ]);
+      if (payload?.sessionId) {
+        setSessionId(payload.sessionId);
       }
+      const replyContent = payload?.reply?.trim() || "I received your message, but the AI generated an empty response. Please try asking again or rephrase your question.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: String(Date.now()),
+          sender: 'assistant',
+          content: replyContent,
+          timestamp: payload?.timestamp || new Date().toISOString(),
+        },
+      ]);
     },
     onError: (err: any) => {
-      const errorDetail = err?.response?.data?.message || err?.message || 'Unable to connect to AI Assistant. Please check your API key in .env';
+      console.error('SkillForge AI Assistant widget error:', err);
+      const errorDetail = err?.response?.data?.message || err?.message || 'Unable to connect to AI Assistant. Please check your network or try again.';
       setMessages((prev) => [
         ...prev,
         {

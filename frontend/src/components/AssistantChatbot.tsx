@@ -64,17 +64,56 @@ export const AssistantChatbot: React.FC = () => {
   };
 
   const formatMarkdown = (text: string) => {
-    // Simple markdown parsing for bold and bullet lists
     const lines = text.split('\n');
-    return lines.map((line, idx) => {
-      let formatted = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-        return (
-          <li key={idx} className="ml-4 list-disc space-y-1" dangerouslySetInnerHTML={{ __html: formatted.replace(/^[-*]\s+/, '') }} />
-        );
+    const elements: React.ReactNode[] = [];
+    let inCodeBlock = false;
+    let codeBlockLines: string[] = [];
+
+    lines.forEach((line, idx) => {
+      if (line.trim().startsWith('```')) {
+        if (inCodeBlock) {
+          elements.push(
+            <pre key={`cb-${idx}`} className="my-1.5 p-2.5 rounded-lg bg-zinc-950 font-mono text-[11px] text-emerald-400 overflow-x-auto border border-border/40">
+              <code>{codeBlockLines.join('\n')}</code>
+            </pre>
+          );
+          codeBlockLines = [];
+          inCodeBlock = false;
+        } else {
+          inCodeBlock = true;
+          codeBlockLines = [];
+        }
+        return;
       }
-      return <p key={idx} className="mb-1" dangerouslySetInnerHTML={{ __html: formatted }} />;
+
+      if (inCodeBlock) {
+        codeBlockLines.push(line);
+        return;
+      }
+
+      let formatted = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      if (line.startsWith('### ')) {
+        elements.push(<h4 key={idx} className="font-bold text-xs my-1 text-foreground" dangerouslySetInnerHTML={{ __html: formatted.replace('### ', '') }} />);
+      } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+        elements.push(
+          <li key={idx} className="ml-3.5 list-disc space-y-0.5 leading-snug" dangerouslySetInnerHTML={{ __html: formatted.replace(/^[-*]\s+/, '') }} />
+        );
+      } else if (line.trim() === '') {
+        elements.push(<div key={idx} className="h-1" />);
+      } else {
+        elements.push(<p key={idx} className="mb-1 leading-snug" dangerouslySetInnerHTML={{ __html: formatted }} />);
+      }
     });
+
+    if (inCodeBlock && codeBlockLines.length > 0) {
+      elements.push(
+        <pre key="cb-end" className="my-1.5 p-2.5 rounded-lg bg-zinc-950 font-mono text-[11px] text-emerald-400 overflow-x-auto border border-border/40">
+          <code>{codeBlockLines.join('\n')}</code>
+        </pre>
+      );
+    }
+
+    return elements;
   };
 
   return (
@@ -110,7 +149,7 @@ export const AssistantChatbot: React.FC = () => {
                 <div>
                   <h3 className="text-sm font-bold text-foreground leading-none flex items-center gap-1.5">
                     SkillForge AI Assistant
-                    <Badge variant="success" className="text-[9px] px-1 py-0 font-mono">Gemini 1.5</Badge>
+                    <Badge variant="success" className="text-[9px] px-1 py-0 font-mono">Gemini AI</Badge>
                   </h3>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Context-aware career mentor</p>
                 </div>

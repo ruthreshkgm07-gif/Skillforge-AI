@@ -46,8 +46,13 @@ public class AssistantService {
             throw new IllegalArgumentException("Chat message content cannot be empty");
         }
 
-        // 1. Redis Rate Limit: max 30 AI chat requests per 10 minutes per user
-        rateLimiterService.checkRateLimit("ai_chat:" + userId, 30, 10);
+        // 1. Rate Limit: 60 AI chat requests per 10 minutes per user
+        try {
+            rateLimiterService.checkRateLimit("ai_chat:" + userId, 60, 10);
+        } catch (AuthException ex) {
+            log.warn("Rate limit reached for AI chat user {}: {}", userId, ex.getMessage());
+            throw new IllegalArgumentException("You have sent multiple messages in quick succession. Please wait a few moments before asking another question.");
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(AuthException::userNotFound);
@@ -63,17 +68,19 @@ public class AssistantService {
             isNewSession = true;
         }
 
+        String userQuery = request.getMessage().trim();
+
         // 3. Save User Message
         AssistantMessage userMessage = AssistantMessage.builder()
                 .session(session)
                 .sender("user")
-                .content(request.getMessage().trim())
+                .content(userQuery)
                 .build();
         messageRepository.save(userMessage);
 
         // Update session title if default
         if (isNewSession || "SkillForge Assistant Session".equals(session.getTitle())) {
-            String title = request.getMessage().trim();
+            String title = userQuery;
             if (title.length() > 40) {
                 title = title.substring(0, 37) + "...";
             }
@@ -86,20 +93,21 @@ public class AssistantService {
         // 5. Fetch Session Conversation History with older turns compression
         List<AssistantMessage> history = messageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId());
 
-        List<LlmService.ChatMessage> llmMessages = new ArrayList<>();
-        llmMessages.add(new LlmService.ChatMessage("system", systemPrompt));
-
+        String finalSystemPrompt = systemPrompt;
         if (history.size() > 10) {
             int oldestCount = history.size() - 10;
             List<AssistantMessage> olderTurns = history.subList(0, oldestCount);
-            StringBuilder summaryBuilder = new StringBuilder("SUMMARY OF EARLIER CONVERSATION TURNS IN THIS SESSION:\n");
+            StringBuilder summaryBuilder = new StringBuilder("\n\n### SUMMARY OF EARLIER CONVERSATION TURNS IN THIS SESSION ###\n");
             for (AssistantMessage m : olderTurns) {
                 String sender = "user".equalsIgnoreCase(m.getSender()) ? "User" : "Assistant";
                 String snippet = m.getContent().length() > 100 ? m.getContent().substring(0, 97) + "..." : m.getContent();
                 summaryBuilder.append("- ").append(sender).append(": ").append(snippet.replaceAll("\n", " ")).append("\n");
             }
-            llmMessages.add(new LlmService.ChatMessage("system", summaryBuilder.toString()));
+            finalSystemPrompt += summaryBuilder.toString();
         }
+
+        List<LlmService.ChatMessage> llmMessages = new ArrayList<>();
+        llmMessages.add(new LlmService.ChatMessage("system", finalSystemPrompt));
 
         int startIdx = Math.max(0, history.size() - 10);
         List<AssistantMessage> recentHistory = history.subList(startIdx, history.size());
@@ -109,16 +117,22 @@ public class AssistantService {
             llmMessages.add(new LlmService.ChatMessage(role, m.getContent()));
         }
 
-        // 6. Generate AI Response via LlmService (supporting OpenAI & Gemini & Fallback)
+        // 6. Generate AI Response via LlmService (supporting OpenRouter, OpenAI, Gemini, and Fallback)
+        log.info("Processing AI Assistant chat for user [{}] in session [{}]: \"{}\"", userId, session.getId(), userQuery);
         String assistantReply;
         try {
             assistantReply = llmService.generateChatCompletion(llmMessages, 0.7, 1500);
             if (assistantReply == null || assistantReply.isBlank()) {
+                log.warn("AI Assistant provider returned empty response for query [{}]. Using intelligent fallback.", userQuery);
                 assistantReply = llmService.generateFallbackResponse(llmMessages);
             }
         } catch (Exception ex) {
-            log.warn("AI Assistant provider call failed: {}. Generating comprehensive response.", ex.getMessage());
+            log.warn("AI Assistant provider call failed for query [{}]: {}. Generating fallback response.", userQuery, ex.getMessage());
             assistantReply = llmService.generateFallbackResponse(llmMessages);
+        }
+
+        if (assistantReply == null || assistantReply.isBlank()) {
+            assistantReply = "I am here to help you with your SkillForge learning path, coding challenges, resume optimization, and interview preparation. Could you please clarify or rephrase your question?";
         }
 
         // 7. Save Assistant Message
@@ -131,6 +145,8 @@ public class AssistantService {
 
         session.setUpdatedAt(ZonedDateTime.now());
         sessionRepository.save(session);
+
+        log.info("AI Assistant responded successfully to user [{}] (reply length: {} chars)", userId, assistantReply.length());
 
         return AssistantChatDto.ChatResponse.builder()
                 .sessionId(session.getId())
