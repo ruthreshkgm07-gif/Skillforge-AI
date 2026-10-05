@@ -178,8 +178,8 @@ Manages the full hiring lifecycle in one dashboard.
 ### 1️⃣ Clone the Repository
 
 ```bash
-git clone https://github.com/skillforge-ai/skillforge-ai.git
-cd skillforge-ai
+git clone https://github.com/ruthreshkgm07-gif/Skillforge-AI.git
+cd Skillforge-AI
 ```
 
 ### 2️⃣ Configure Environment Variables
